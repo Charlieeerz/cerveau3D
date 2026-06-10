@@ -1,0 +1,112 @@
+import pygame
+import serial
+import time
+import numpy as np
+import cv2  # Pour utiliser OpenCV et lire les vidéos
+
+# Configure le port série
+arduino_port = '/dev/ttyACM0'  # Remplace par ton port série Arduino
+baud_rate = 9600
+
+# Ouvre la connexion série avec l'Arduino
+ser = serial.Serial(arduino_port, baud_rate)
+
+# Liste des vidéos à lire alternativement
+videos = [
+    "/home/cerveau/Desktop/videos/V4_B.mp4",  # Remplace par le chemin de ta première vidéo
+    "/home/cerveau/Desktop/videos/V5_A.mp4"   # Remplace par le chemin de ta deuxième vidéo
+]
+
+# Initialisation de pygame
+pygame.init()
+
+# Dimensions de la fenêtre
+screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)  # Plein écran
+
+# Fonction pour afficher une vidéo en utilisant OpenCV et pygame
+def play_video(video_path):
+    # Ouvrir la vidéo avec OpenCV
+    cap = cv2.VideoCapture(video_path)
+    
+    if not cap.isOpened():
+        print("Erreur lors de l'ouverture de la vidéo.")
+        return
+
+    # Obtenez les dimensions de la vidéo
+    vid_height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    vid_width = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    # Dimensions de l'écran
+    screen_width, screen_height = screen.get_size()
+
+    # Calcul du ratio pour garder les proportions
+    scale_w = screen_width / vid_width
+    scale_h = screen_height / vid_height
+    scale = min(scale_w, scale_h)  # Pour que la vidéo tienne dans l'écran
+
+    new_width = int(vid_width * scale)
+    new_height = int(vid_height * scale)
+
+    x_offset = (screen_width - new_width) // 2
+    y_offset = (screen_height - new_height) // 2
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Convertir BGR -> RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Transposer l'image pour pygame (corrige l'inversion)
+        frame_rgb = np.transpose(frame_rgb, (1, 0, 2))  # width, height, channels
+        
+        # Convertir en surface pygame et redimensionner
+        frame_surface = pygame.surfarray.make_surface(frame_rgb)
+        frame_surface = pygame.transform.scale(frame_surface, (new_width, new_height))
+        
+        # Remplir l'écran de noir
+        screen.fill((0, 0, 0))
+        
+        # Afficher la vidéo centrée
+        screen.blit(frame_surface, (x_offset, y_offset))
+        pygame.display.update()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                cap.release()
+                pygame.quit()
+                return
+
+    cap.release()
+
+
+# Afficher un écran noir par défaut
+def display_black_screen():
+    screen.fill((0, 0, 0))  # Écran noir
+    pygame.display.update()  # Mise à jour de l'écran
+
+# Boucle principale : écoute les messages de l'Arduino
+try:
+    print("En attente du signal de l'Arduino...")
+    display_black_screen()  # Afficher un écran noir par défaut
+
+    while True:
+        if ser.in_waiting > 0:
+            signal = ser.readline().decode('utf-8').strip()
+            print(f"Signal reçu: {signal}")
+            
+            if signal == "rouge":
+                print(f"Lancement de la vidéo : {videos[0]}")
+                play_video(videos[0])
+                
+            elif signal == "vert":
+                print(f"Lancement de la vidéo : {videos[1]}")
+                play_video(videos[1])
+
+        time.sleep(0.1)  # Pour éviter une boucle trop rapide et consommer trop de ressources
+
+except KeyboardInterrupt:
+    print("Arrêt du programme.")
+    ser.close()
+    pygame.quit()
